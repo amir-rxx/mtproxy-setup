@@ -43,7 +43,7 @@ log "Using Port: $PORT"
 # ==============================
 section "Installing Dependencies"
 apt update -y || error "apt update failed"
-apt install -y git build-essential libssl-dev zlib1g-dev xxd curl bc vnstat || error "apt install failed"
+apt install -y git build-essential libssl-dev zlib1g-dev xxd curl bc vnstat dos2unix || error "apt install failed"
 log "Dependencies installed"
 
 # ==============================
@@ -107,6 +107,9 @@ else
     warn "No proxy tag provided, skipping sponsored channel"
 fi
 
+# گرفتن تعداد هسته های سرور برای جایگذاری دقیق در فایل سیستم‌دی
+CORES=$(nproc)
+
 cat > /etc/systemd/system/mtproxy.service << SERVICE
 [Unit]
 Description=MTProxy Telegram
@@ -130,7 +133,7 @@ fi
 cat >> /etc/systemd/system/mtproxy.service << SERVICE
   --http-stats \\
   --max-special-connections 5000 \\
-  -M \$(nproc)
+  -M $CORES
 Restart=always
 RestartSec=5
 
@@ -158,7 +161,6 @@ log "Firewall configured"
 # 10. Cron for Auto-Update Config
 # ==============================
 section "Setting up Auto-Update"
-# Clean old cron jobs for MTProxy to avoid duplicates
 (crontab -l 2>/dev/null | grep -v "getProxyConfig"; echo "0 */6 * * * curl -s https://core.telegram.org/getProxyConfig -o /opt/MTProxy/proxy-multi.conf && systemctl restart mtproxy") | crontab -
 log "Cron job added (every 6 hours with auto-restart)"
 
@@ -223,5 +225,8 @@ echo ""
 echo -e "  Run ${YELLOW}proxy-stats${NC} anytime to check status"
 echo ""
 EOF
+
+# Fix Windows CRLF line endings automatically just in case
+sed -i -e 's/\r$//' /root/mtproxy-setup.sh 2>/dev/null || true
 chmod +x /root/mtproxy-setup.sh
 echo "Done! Run with: bash /root/mtproxy-setup.sh"
