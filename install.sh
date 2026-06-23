@@ -73,8 +73,8 @@ log "Telegram config fetched"
 section "Generating Secure FakeTLS Secret"
 DOMAIN="google.com"
 HEX_DOMAIN=$(echo -n "$DOMAIN" | xxd -ps | tr -d '\n' | tr -d '\r')
-RANDOM_SECRET=$(head -c 16 /dev/urandom | xxd -ps | tr -d '\n' | tr -d '\r')
-SECRET="ee${RANDOM_SECRET}${HEX_DOMAIN}"
+SECRET=$(head -c 16 /dev/urandom | xxd -ps | tr -d '\n' | tr -d '\r')
+LINK_SECRET="ee${SECRET}${HEX_DOMAIN}"
 log "FakeTLS Secret generated (Domain: $DOMAIN)"
 
 # ==============================
@@ -105,8 +105,8 @@ section "Creating systemd Service"
 
 CORES=$(nproc)
 
-# ۱. ساختار اولیه دستور بدون فلگ‌های نامعتبر
-CMD="/opt/MTProxy/objs/bin/mtproto-proxy -u nobody -p 8888 -H $PORT -S $SECRET --aes-pwd /opt/MTProxy/proxy-secret"
+# قبل از --aes-pwd اضافه کن --domain
+CMD="/opt/MTProxy/objs/bin/mtproto-proxy -u nobody -p 8888 -H $PORT -S $SECRET --domain $DOMAIN --aes-pwd /opt/MTProxy/proxy-secret"
 
 # ۲. اضافه کردن تگ پروکسی با فلگ صحیح
 if [ -n "$PROXY_TAG" ]; then
@@ -225,7 +225,7 @@ echo -e "  ${GREEN}IP:${NC}       $SERVER_IP"
 echo -e "  ${GREEN}Port:${NC}     $PORT"
 echo ""
 echo -e "  ${GREEN}Proxy Link:${NC}"
-echo "  https://t.me/proxy?server=$SERVER_IP&port=$PORT&secret=$SECRET"
+echo "  https://t.me/proxy?server=$SERVER_IP&port=$PORT&secret=$LINK_SECRET"
 echo ""
 echo -e "  Run ${YELLOW}proxy-stats${NC} anytime to check status"
 echo ""
