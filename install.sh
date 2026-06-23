@@ -105,21 +105,21 @@ section "Creating systemd Service"
 
 CORES=$(nproc)
 
-# ۱. ساختار اولیه دستور و متغیرهای اصلی
+# ۱. ساختار اولیه دستور بدون فلگ‌های نامعتبر
 CMD="/opt/MTProxy/objs/bin/mtproto-proxy -u nobody -p 8888 -H $PORT -S $SECRET --aes-pwd /opt/MTProxy/proxy-secret"
 
-# ۲. اضافه کردن تگ پروکسی با فلگ صحیح (-P)
+# ۲. اضافه کردن تگ پروکسی با فلگ صحیح
 if [ -n "$PROXY_TAG" ]; then
-    CMD="$CMD -P $PROXY_TAG"
+    CMD="$CMD --proxy-tag $PROXY_TAG"
     log "Proxy tag will be included"
 else
     warn "No proxy tag provided, skipping sponsored channel"
 fi
 
-# ۳. اضافه کردن تنظیمات آماری و هسته
-CMD="$CMD --http-stats --max-special-connections 5000 -M $CORES"
+# ۳. استفاده از فلگ‌های رسمی برای آمارهای وب و تعداد هسته
+CMD="$CMD --http-stats --cpu-threads $CORES"
 
-# ۴. قرار دادن فایل کانفیگ به عنوان آخرین آرگومان (بسیار مهم)
+# ۴. قرار دادن فایل کانفیگ به عنوان آخرین آرگومان
 CMD="$CMD /opt/MTProxy/proxy-multi.conf"
 
 cat > /etc/systemd/system/mtproxy.service << SERVICE
@@ -143,13 +143,12 @@ systemctl daemon-reload
 systemctl enable mtproxy
 systemctl start mtproxy
 sleep 2
-systemctl is-active --quiet mtproxy && log "MTProxy service started" || error "MTProxy service failed to start. Run 'journalctl -u mtproxy -n 20 --no-pager' to see logs."
+systemctl is-active --quiet mtproxy && log "MTProxy service started successfully!" || error "MTProxy service failed to start."
 
 # ==============================
 # 9. Firewall
 # ==============================
 section "Configuring Firewall"
-# Find the active SSH port to prevent lockouts
 SSH_PORT=$(echo $SSH_CONNECTION | awk '{print $4}')
 SSH_PORT=${SSH_PORT:-22}
 
