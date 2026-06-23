@@ -1,4 +1,3 @@
-cat > /root/mtproxy-setup.sh << 'EOF'
 #!/bin/bash
 
 # ==============================
@@ -42,7 +41,7 @@ log "Using Port: $PORT"
 # 2. Update & Install Dependencies
 # ==============================
 section "Installing Dependencies"
-apt update -y || error "apt update failed"
+apt update || error "apt update failed"
 apt install -y git build-essential libssl-dev zlib1g-dev xxd curl bc vnstat dos2unix || error "apt install failed"
 log "Dependencies installed"
 
@@ -107,7 +106,7 @@ else
     warn "No proxy tag provided, skipping sponsored channel"
 fi
 
-# گرفتن تعداد هسته های سرور برای جایگذاری دقیق در فایل سیستم‌دی
+# گرفتن تعداد هسته های سرور برای جایگذاری دقیق
 CORES=$(nproc)
 
 cat > /etc/systemd/system/mtproxy.service << SERVICE
@@ -118,12 +117,12 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/MTProxy
-ExecStart=/opt/MTProxy/objs/bin/mtproto-proxy \\
-  -u nobody \\
-  -p 8888 \\
-  -H $PORT \\
-  -S $SECRET \\
-  --aes-pwd /opt/MTProxy/proxy-secret /opt/MTProxy/proxy-multi.conf \\
+ExecStart=/opt/MTProxy/objs/bin/mtproto-proxy \
+  -u nobody \
+  -p 8888 \
+  -H $PORT \
+  -S $SECRET \
+  --aes-pwd /opt/MTProxy/proxy-secret /opt/MTProxy/proxy-multi.conf \
 SERVICE
 
 if [ -n "$PROXY_TAG" ]; then
@@ -131,8 +130,8 @@ if [ -n "$PROXY_TAG" ]; then
 fi
 
 cat >> /etc/systemd/system/mtproxy.service << SERVICE
-  --http-stats \\
-  --max-special-connections 5000 \\
+  --http-stats \
+  --max-special-connections 5000 \
   -M $CORES
 Restart=always
 RestartSec=5
@@ -161,8 +160,8 @@ log "Firewall configured"
 # 10. Cron for Auto-Update Config
 # ==============================
 section "Setting up Auto-Update"
-(crontab -l 2>/dev/null | grep -v "getProxyConfig"; echo "0 */6 * * * curl -s https://core.telegram.org/getProxyConfig -o /opt/MTProxy/proxy-multi.conf && systemctl restart mtproxy") | crontab -
-log "Cron job added (every 6 hours with auto-restart)"
+(crontab -l 2>/dev/null | grep -v "getProxyConfig"; echo "0 */6 * * * curl -s https://core.telegram.org/getProxyConfig -o /opt/MTProxy/proxy-multi.conf") | crontab -
+log "Cron job added (every 6 hours)"
 
 # ==============================
 # 11. Install proxy-stats
@@ -224,9 +223,3 @@ echo "  https://t.me/proxy?server=$SERVER_IP&port=$PORT&secret=$SECRET"
 echo ""
 echo -e "  Run ${YELLOW}proxy-stats${NC} anytime to check status"
 echo ""
-EOF
-
-# Fix Windows CRLF line endings automatically just in case
-sed -i -e 's/\r$//' /root/mtproxy-setup.sh 2>/dev/null || true
-chmod +x /root/mtproxy-setup.sh
-echo "Done! Run with: bash /root/mtproxy-setup.sh"
