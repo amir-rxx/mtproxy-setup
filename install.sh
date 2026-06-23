@@ -18,15 +18,36 @@ error()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 section() { echo -e "\n${BLUE}==============================${NC}\n    $1\n${BLUE}==============================${NC}"; }
 
 # ==============================
-# 1. Update & Install Dependencies
+# 0. Root Check
+# ==============================
+if [ "$EUID" -ne 0 ]; then
+    error "Please run as root (use sudo)"
+fi
+
+# ==============================
+# 1. Port Configuration & Check
+# ==============================
+section "Port Configuration"
+read -p "Enter MTProxy port (Default: 443): " PORT
+PORT=${PORT:-443}
+
+if command -v ss >/dev/null 2>&1; then
+    if ss -tuln | grep -qE ":${PORT}\b"; then
+        error "Port $PORT is already in use! Please stop the conflicting service or choose another port."
+    fi
+fi
+log "Using Port: $PORT"
+
+# ==============================
+# 2. Update & Install Dependencies
 # ==============================
 section "Installing Dependencies"
-apt update -y && apt upgrade -y || error "apt update failed"
+apt update -y || error "apt update failed"
 apt install -y git build-essential libssl-dev zlib1g-dev xxd curl bc vnstat || error "apt install failed"
 log "Dependencies installed"
 
 # ==============================
-# 2. Clone & Build MTProxy
+# 3. Clone & Build MTProxy
 # ==============================
 section "Building MTProxy"
 if [ -d /opt/MTProxy ]; then
@@ -40,7 +61,7 @@ make clean && make || error "Build failed"
 log "MTProxy built successfully"
 
 # ==============================
-# 3. Fetch Telegram Config
+# 4. Fetch Telegram Config
 # ==============================
 section "Fetching Telegram Config"
 curl -s https://core.telegram.org/getProxySecret -o /opt/MTProxy/proxy-secret || error "Failed to fetch proxy-secret"
@@ -48,20 +69,20 @@ curl -s https://core.telegram.org/getProxyConfig -o /opt/MTProxy/proxy-multi.con
 log "Telegram config fetched"
 
 # ==============================
-# 4. Generate Secret
+# 5. Generate Secret
 # ==============================
 section "Generating Secret"
 SECRET=$(head -c 16 /dev/urandom | xxd -ps)
 log "Secret generated: $SECRET"
 
 # ==============================
-# 5. Get Server IP
+# 6. Get Server IP
 # ==============================
 SERVER_IP=$(curl -s https://api.ipify.org)
 log "Server IP: $SERVER_IP"
 
 # ==============================
-# 6. Get Proxy Tag
+# 7. Get Proxy Tag
 # ==============================
 section "Proxy Tag Setup"
 echo ""
@@ -69,20 +90,18 @@ warn "To enable sponsored channel, follow these steps:"
 echo "  1. Open Telegram and message @MTProxybot"
 echo "  2. Send /newproxy"
 echo "  3. Enter IP: $SERVER_IP"
-echo "  4. Enter Port: 443"
+echo "  4. Enter Port: $PORT"
 echo "  5. Enter Secret: $SECRET"
 echo "  6. Copy the proxy tag you receive"
 echo ""
 read -p "Enter your proxy tag (or press Enter to skip): " PROXY_TAG
 
 # ==============================
-# 7. Create systemd Service
+# 8. Create systemd Service
 # ==============================
 section "Creating systemd Service"
 
-PROXY_TAG_FLAG=""
 if [ -n "$PROXY_TAG" ]; then
-    PROXY_TAG_FLAG="--proxy-tag $PROXY_TAG \\"
     log "Proxy tag will be included"
 else
     warn "No proxy tag provided, skipping sponsored channel"
@@ -99,13 +118,19 @@ WorkingDirectory=/opt/MTProxy
 ExecStart=/opt/MTProxy/objs/bin/mtproto-proxy \\
   -u nobody \\
   -p 8888 \\
-  -H 443 \\
+  -H $PORT \\
   -S $SECRET \\
   --aes-pwd /opt/MTProxy/proxy-secret /opt/MTProxy/proxy-multi.conf \\
-  $([ -n "$PROXY_TAG" ] && echo "--proxy-tag $PROXY_TAG \\")
+SERVICE
+
+if [ -n "$PROXY_TAG" ]; then
+    echo "  --proxy-tag $PROXY_TAG \\" >> /etc/systemd/system/mtproxy.service
+fi
+
+cat >> /etc/systemd/system/mtproxy.service << SERVICE
   --http-stats \\
   --max-special-connections 5000 \\
-  -M $(nproc)
+  -M \$(nproc)
 Restart=always
 RestartSec=5
 
@@ -120,24 +145,25 @@ sleep 2
 systemctl is-active --quiet mtproxy && log "MTProxy service started" || error "MTProxy service failed to start"
 
 # ==============================
-# 8. Firewall
+# 9. Firewall
 # ==============================
 section "Configuring Firewall"
-ufw allow 443/tcp
-ufw allow 443/udp
+ufw allow $PORT/tcp
+ufw allow $PORT/udp
 ufw allow 22/tcp
 ufw --force enable
 log "Firewall configured"
 
 # ==============================
-# 9. Cron for Auto-Update Config
+# 10. Cron for Auto-Update Config
 # ==============================
 section "Setting up Auto-Update"
-(crontab -l 2>/dev/null; echo "0 */6 * * * curl -s https://core.telegram.org/getProxyConfig -o /opt/MTProxy/proxy-multi.conf") | crontab -
-log "Cron job added (every 6 hours)"
+# Clean old cron jobs for MTProxy to avoid duplicates
+(crontab -l 2>/dev/null | grep -v "getProxyConfig"; echo "0 */6 * * * curl -s https://core.telegram.org/getProxyConfig -o /opt/MTProxy/proxy-multi.conf && systemctl restart mtproxy") | crontab -
+log "Cron job added (every 6 hours with auto-restart)"
 
 # ==============================
-# 10. Install proxy-stats
+# 11. Install proxy-stats
 # ==============================
 section "Installing proxy-stats"
 cat > /usr/local/bin/proxy-stats << 'STATS'
@@ -189,10 +215,10 @@ section "Setup Complete"
 echo ""
 echo -e "  ${GREEN}Secret:${NC}   $SECRET"
 echo -e "  ${GREEN}IP:${NC}       $SERVER_IP"
-echo -e "  ${GREEN}Port:${NC}     443"
+echo -e "  ${GREEN}Port:${NC}     $PORT"
 echo ""
 echo -e "  ${GREEN}Proxy Link:${NC}"
-echo "  https://t.me/proxy?server=$SERVER_IP&port=443&secret=$SECRET"
+echo "  https://t.me/proxy?server=$SERVER_IP&port=$PORT&secret=$SECRET"
 echo ""
 echo -e "  Run ${YELLOW}proxy-stats${NC} anytime to check status"
 echo ""
