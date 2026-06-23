@@ -72,8 +72,8 @@ log "Telegram config fetched"
 # ==============================
 section "Generating Secure FakeTLS Secret"
 DOMAIN="google.com"
-HEX_DOMAIN=$(echo -n "$DOMAIN" | xxd -ps)
-RANDOM_SECRET=$(head -c 16 /dev/urandom | xxd -ps)
+HEX_DOMAIN=$(echo -n "$DOMAIN" | xxd -ps | tr -d '\n' | tr -d '\r')
+RANDOM_SECRET=$(head -c 16 /dev/urandom | xxd -ps | tr -d '\n' | tr -d '\r')
 SECRET="ee${RANDOM_SECRET}${HEX_DOMAIN}"
 log "FakeTLS Secret generated (Domain: $DOMAIN)"
 
@@ -105,17 +105,22 @@ section "Creating systemd Service"
 
 CORES=$(nproc)
 
-# Building the ExecStart command in a single string to avoid backslash issues
-CMD="/opt/MTProxy/objs/bin/mtproto-proxy -u nobody -p 8888 -H $PORT -S $SECRET --aes-pwd /opt/MTProxy/proxy-secret /opt/MTProxy/proxy-multi.conf"
+# ۱. ساختار اولیه دستور و متغیرهای اصلی
+CMD="/opt/MTProxy/objs/bin/mtproto-proxy -u nobody -p 8888 -H $PORT -S $SECRET --aes-pwd /opt/MTProxy/proxy-secret"
 
+# ۲. اضافه کردن تگ پروکسی با فلگ صحیح (-P)
 if [ -n "$PROXY_TAG" ]; then
-    CMD="$CMD --proxy-tag $PROXY_TAG"
+    CMD="$CMD -P $PROXY_TAG"
     log "Proxy tag will be included"
 else
     warn "No proxy tag provided, skipping sponsored channel"
 fi
 
+# ۳. اضافه کردن تنظیمات آماری و هسته
 CMD="$CMD --http-stats --max-special-connections 5000 -M $CORES"
+
+# ۴. قرار دادن فایل کانفیگ به عنوان آخرین آرگومان (بسیار مهم)
+CMD="$CMD /opt/MTProxy/proxy-multi.conf"
 
 cat > /etc/systemd/system/mtproxy.service << SERVICE
 [Unit]
@@ -128,8 +133,7 @@ WorkingDirectory=/opt/MTProxy
 ExecStart=$CMD
 Restart=always
 RestartSec=5
-LimitNOFILE=1048576
-MemoryMax=1G
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
@@ -139,7 +143,7 @@ systemctl daemon-reload
 systemctl enable mtproxy
 systemctl start mtproxy
 sleep 2
-systemctl is-active --quiet mtproxy && log "MTProxy service started" || error "MTProxy service failed to start"
+systemctl is-active --quiet mtproxy && log "MTProxy service started" || error "MTProxy service failed to start. Run 'journalctl -u mtproxy -n 20 --no-pager' to see logs."
 
 # ==============================
 # 9. Firewall
